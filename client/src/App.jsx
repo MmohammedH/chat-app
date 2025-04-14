@@ -8,10 +8,12 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
+import axios from "axios";
+
 const App = () => {
   const socket = useMemo(
     () =>
-      io("http://localhost:3000", {
+      io("http://localhost:3000/chat", {
         withCredentials: true,
       }),
     []
@@ -26,13 +28,21 @@ const App = () => {
   const handleSubmit = (e) => {
     e.preventDefault();
     socket.emit("message", { message, room });
+    setMessages((prev) => [...prev, message]); // Show sender's own message
     setMessage("");
   };
 
-  const joinRoomHandler = (e) => {
+  const joinRoomHandler = async (e) => {
     e.preventDefault();
     socket.emit("join-room", roomName);
+    setRoom(roomName);
     setRoomName("");
+
+    // Load chat history
+    const res = await axios.get(`http://localhost:3000/history/${roomName}`, {
+      withCredentials: true,
+    });
+    setMessages(res.data.messages || []);
   };
 
   useEffect(() => {
@@ -42,12 +52,8 @@ const App = () => {
     });
 
     socket.on("receive-message", (data) => {
-      console.log(data);
+      console.log("Received:", data);
       setMessages((messages) => [...messages, data]);
-    });
-
-    socket.on("welcome", (s) => {
-      console.log(s);
     });
 
     return () => {
@@ -59,7 +65,7 @@ const App = () => {
     <Container maxWidth="sm">
       <Box sx={{ height: 500 }} />
       <Typography variant="h6" component="div" gutterBottom>
-        {socketID}
+        Socket ID: {socketID}
       </Typography>
 
       <form onSubmit={joinRoomHandler}>
@@ -67,7 +73,6 @@ const App = () => {
         <TextField
           value={roomName}
           onChange={(e) => setRoomName(e.target.value)}
-          id="outlined-basic"
           label="Room Name"
           variant="outlined"
         />
@@ -80,14 +85,12 @@ const App = () => {
         <TextField
           value={message}
           onChange={(e) => setMessage(e.target.value)}
-          id="outlined-basic"
           label="Message"
           variant="outlined"
         />
         <TextField
           value={room}
           onChange={(e) => setRoom(e.target.value)}
-          id="outlined-basic"
           label="Room"
           variant="outlined"
         />
@@ -96,9 +99,9 @@ const App = () => {
         </Button>
       </form>
 
-      <Stack>
+      <Stack spacing={1} mt={2}>
         {messages.map((m, i) => (
-          <Typography key={i} variant="h6" component="div" gutterBottom>
+          <Typography key={i} variant="body1">
             {m}
           </Typography>
         ))}
