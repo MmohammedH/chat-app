@@ -25,51 +25,64 @@ app.use(
     credentials: true,
   })
 );
+app.use(cookieParser());
 
-app.get("/", (req, res) => {
-  res.send("Hello World!");
-});
+// In-memory chat history (use DB for persistence in real-world)
+const chatHistory = {};
 
+// Login route to issue JWT
 app.get("/login", (req, res) => {
   const token = jwt.sign({ _id: "asdasjdhkasdasdas" }, secretKeyJWT);
-
   res
     .cookie("token", token, { httpOnly: true, secure: true, sameSite: "none" })
-    .json({
-      message: "Login Success",
-    });
+    .json({ message: "Login Success" });
 });
 
-io.use((socket, next) => {
-  cookieParser()(socket.request, socket.request.res, (err) => {
+// Get chat history for a room
+app.get("/history/:room", (req, res) => {
+  const room = req.params.room;
+  res.json({ messages: chatHistory[room] || [] });
+});
+
+// /chat namespace
+const chatNamespace = io.of("/chat");
+
+chatNamespace.use((socket, next) => {
+  cookieParser()(socket.request, socket.request.res || {}, (err) => {
     if (err) return next(err);
 
     const token = socket.request.cookies.token;
     if (!token) return next(new Error("Authentication Error"));
 
-    const decoded = jwt.verify(token, secretKeyJWT);
-    next();
+    try {
+      const decoded = jwt.verify(token, secretKeyJWT);
+      socket.user = decoded;
+      next();
+    } catch (err) {
+      next(new Error("Invalid Token"));
+    }
   });
 });
 
-io.on("connection", (socket) => {
-  console.log("User Connected", socket.id);
-
-  socket.on("message", ({ room, message }) => {
-    console.log({ room, message });
-    socket.to(room).emit("receive-message", message);
-  });
+chatNamespace.on("connection", (socket) => {
+  console.log("User connected to /chat:", socket.id);
 
   socket.on("join-room", (room) => {
     socket.join(room);
-    console.log(`User joined room ${room}`);
+    console.log(`User ${socket.id} joined room ${room}`);
+  });
+
+  socket.on("message", ({ room, message }) => {
+    if (!chatHistory[room]) chatHistory[room] = [];
+    chatHistory[room].push(message); // Store message in memory
+    socket.to(room).emit("receive-message", message);
   });
 
   socket.on("disconnect", () => {
-    console.log("User Disconnected", socket.id);
+    console.log("User disconnected from /chat:", socket.id);
   });
 });
 
 server.listen(port, () => {
-  console.log(`Server is running on port ${port}`);
+  console.log(`Server running on port ${port}`);
 });
